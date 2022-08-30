@@ -8,7 +8,7 @@ BLDCMotor motor = BLDCMotor(7);
 BLDCDriver6PWM driver = BLDCDriver6PWM(10, 11, 12, 13, 16, 17);
 MagneticSensorSPI sensor = MagneticSensorSPI(AS5147_SPI, 5);
 
-float xAng, yAng, zAng;
+float xAng, yAng, zAng, elbowAng;
 float x, y, z, e;
 float _x, _y, _z;
 unsigned long prevTime;
@@ -62,8 +62,6 @@ void setup() {
   motor.sensor_offset = -4.415;
   motor.target = 0;
 
-  _delay(1000);
-
   x = getAngI2C(0x40);
   y = getAngI2C(0x41);
   z = getAngI2C(0x42);
@@ -76,6 +74,8 @@ void setup() {
 }
 
 
+byte buf[2+4*4];
+
 void loop() {
 
   unsigned long curTime = millis();
@@ -86,20 +86,18 @@ void loop() {
   xAng += x - _x;
   yAng -= y - _y;
   zAng += z - _z;
+  elbowAng = -(sensor.getAngle() - e)/PI*180/5;
   x = _x; 
   y = _y;
   z = _z;
 
-  if (curTime - prevTime > 100) {
-    byte buf[2+4*4];
+  if (curTime - prevTime > 10) {
     buf[0] = 0x02;
-    float elbowAng = -(sensor.getAngle() - e)/PI*180/5;
     memcpy(&buf[1+4*(1-1)],&zAng, 4);
     memcpy(&buf[1+4*(2-1)],&yAng, 4);
     memcpy(&buf[1+4*(3-1)],&xAng, 4);
     memcpy(&buf[1+4*(4-1)],&elbowAng, 4);
     buf[2+4*4-1] = 0x04;
-
     Serial.write(buf,18); 
     prevTime = curTime;
   }
