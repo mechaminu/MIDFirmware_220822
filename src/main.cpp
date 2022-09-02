@@ -1,5 +1,4 @@
-#include <Arduino.h>
-#include <SimpleFOC.h>
+#include <mid.h>
 
 MbedSPI _spi(4,3,2);
 MbedI2C _wire(26,27);
@@ -26,17 +25,20 @@ float getAngI2C(int addr) {
 
 float res;
 void torqueCommand() {
-    while (Serial.available()) {
-      if (Serial.read() == 0x02 && Serial.read() == 0xFF) {
-        Serial.readBytesUntil(0x04, (byte*)&res, 4);
+    while (Serial1.available() > 0)
+      if (Serial1.read() == 0x02 && Serial1.read() == 0xFF) {
+        Serial1.readBytesUntil(0x04, (byte*)&res, 4);
         motor.target = res / 1.333;
       }
-    }
+
+    while(Serial1.available())
+      Serial1.read();
 }
 
 void setup() {
+  Serial1.begin(1382400);
+
   _wire.begin();
-  _wire.setTimeout(10);
   sensor.init(&_spi);
   motor.linkSensor(&sensor);
 
@@ -56,7 +58,6 @@ void setup() {
   motor.voltage_sensor_align = 1;
   motor.velocity_limit = 50;
 
-  Serial.begin(921600);
   motor.init();
   motor.initFOC(6.25, Direction::CCW);
   motor.sensor_offset = -4.415;
@@ -91,15 +92,14 @@ void loop() {
   z = _z;
 
   curTime = millis();
-
-  if (curTime - prevTime > 17) {
+  if (curTime - prevTime > 7) {
     buf[0] = 0x02;
     memcpy(&buf[1+4*(1-1)],&zAng, 4);
     memcpy(&buf[1+4*(2-1)],&yAng, 4);
     memcpy(&buf[1+4*(3-1)],&xAng, 4);
     memcpy(&buf[1+4*(4-1)],&elbowAng, 4);
     buf[2+4*4-1] = 0x04;
-    Serial.write(buf,18);
+    Serial1.write(buf,18);
     prevTime = curTime;
   }
 }
