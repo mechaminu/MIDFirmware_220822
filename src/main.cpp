@@ -1,20 +1,20 @@
 #include <mid.h>
 
-MbedSPI _spi(4,3,2);
-MbedI2C _wire(26,27);
+MbedSPI _spi(4, 3, 2);
+MbedI2C _wire(26, 27);
 
 BLDCMotor motor = BLDCMotor(7);
 BLDCDriver6PWM driver = BLDCDriver6PWM(10, 11, 12, 13, 16, 17);
 MagneticSensorSPI sensor = MagneticSensorSPI(AS5147_SPI, 5);
-
-
+byte buf[2 + 4 * 4];
 float xAng, yAng, zAng, elbowAng;
 float x, y, z, e;
 float _x, _y, _z;
 
 float prevTime, curTime;
 
-float getAngI2C(int addr) {
+float getAngI2C(int addr)
+{
   _wire.beginTransmission(addr);
   _wire.write(0x0E);
   _wire.endTransmission();
@@ -24,18 +24,56 @@ float getAngI2C(int addr) {
 }
 
 float res;
-void torqueCommand() {
-    while (Serial1.available() > 0)
-      if (Serial1.read() == 0x02 && Serial1.read() == 0xFF) {
-        Serial1.readBytesUntil(0x04, (byte*)&res, 4);
+void SerialCommunication()
+{
+  while (Serial1.available() > 0)
+  {
+    if (Serial1.read() == 0x02)
+    {
+      auto getB = Serial.read();
+      if (getB == 0xFF)
+      {
+        Serial1.readBytesUntil(0x04, (byte *)&res, 4);
         motor.target = res / 1.333;
       }
+      else if (getB == 0xAA)
+      {
+        curTime = millis();
+        if (curTime - prevTime > 7)
+        {
+          buf[0] = 0x02;
+          memcpy(&buf[1 + 4 * (1 - 1)], &zAng, 4);
+          memcpy(&buf[1 + 4 * (2 - 1)], &yAng, 4);
+          memcpy(&buf[1 + 4 * (3 - 1)], &xAng, 4);
+          memcpy(&buf[1 + 4 * (4 - 1)], &elbowAng, 4);
+          buf[2 + 4 * 4 - 1] = 0x04;
+          Serial1.write(buf, 18);
+          prevTime = curTime;
+        }
+      }
+    }
+  }
 
-    while(Serial1.available())
-      Serial1.read();
+  while (Serial1.available())
+    Serial1.read();
 }
 
-void setup() {
+void CalcAngle()
+{
+  _x = getAngI2C(0x40);
+  _y = getAngI2C(0x41);
+  _z = getAngI2C(0x42);
+  xAng += x - _x;
+  yAng -= y - _y;
+  zAng += z - _z;
+  elbowAng = -(sensor.getAngle() - e) / PI * 180 / 5;
+  x = _x;
+  y = _y;
+  z = _z;
+}
+
+void setup()
+{
   Serial1.begin(1382400);
 
   _wire.begin();
@@ -74,32 +112,11 @@ void setup() {
   prevTime = millis();
 }
 
-byte buf[2+4*4];
-void loop() {
-  torqueCommand();
+
+void loop()
+{
+  CalcAngle();
+  SerialCommunication();
   motor.loopFOC();
   motor.move();
-
-  _x = getAngI2C(0x40);
-  _y = getAngI2C(0x41);
-  _z = getAngI2C(0x42);
-  xAng += x - _x;
-  yAng -= y - _y;
-  zAng += z - _z;
-  elbowAng = -(sensor.getAngle() - e)/PI*180/5;
-  x = _x; 
-  y = _y;
-  z = _z;
-
-  curTime = millis();
-  if (curTime - prevTime > 7) {
-    buf[0] = 0x02;
-    memcpy(&buf[1+4*(1-1)],&zAng, 4);
-    memcpy(&buf[1+4*(2-1)],&yAng, 4);
-    memcpy(&buf[1+4*(3-1)],&xAng, 4);
-    memcpy(&buf[1+4*(4-1)],&elbowAng, 4);
-    buf[2+4*4-1] = 0x04;
-    Serial1.write(buf,18);
-    prevTime = curTime;
-  }
 }
